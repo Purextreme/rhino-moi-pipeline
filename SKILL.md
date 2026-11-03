@@ -13,7 +13,7 @@ Complete and verify the model handoff in the open Blender instance. Read [refere
 - `scripts/rhino-metadata/invoke_working_copy.ps1` and `prepare_working_copy.py` duplicate the loaded geometry, expand nested Block occurrences and write a separate Rhino 5 transport file plus occurrence sidecar. Read [references/rhino-working-copy.md](references/rhino-working-copy.md) first.
 - `scripts/blender_pipeline.py` runs through Blender MCP with import/planning, hierarchy reconstruction, default transform cleanup, orientation audit and verification. Read [references/blender-operations.md](references/blender-operations.md) for its contract and invocation.
 - `scripts/blender_cleanup.py` bakes scale and conditionally centers mesh origins; `scripts/blender_normals_audit.py` inspects outward orientation without changing faces. Read [references/post-processing.md](references/post-processing.md) before this default post-processing stage.
-- MoI meshing uses the actual application. Use an available Computer Use skill for dialogs; inspect the resulting settings before confirming. Application scripting is preferred when the installed version exposes a verified API.
+- `scripts/invoke_moi_export.ps1` runs the actual MoI mesher in a separate process and applies the preset through its API on a verified build. Follow the MoI section of [references/workflow.md](references/workflow.md) for version checks, visual checkpoints and the dialog fallback.
 
 ## Optional appearance finish
 

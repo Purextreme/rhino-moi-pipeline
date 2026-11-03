@@ -2,7 +2,7 @@
 
 ## Preflight and Rhino snapshot
 
-Load `blender-playbook`. Confirm Blender MCP can read the intended running instance; capture Blender version, current file/Scene, dirty state, object inventory, units and FBX operator properties. Inspect current MoI contents before opening another file. Preserve existing work in every application.
+Load `blender-playbook`. Confirm Blender MCP can read the intended running instance; capture Blender version, current file/Scene, dirty state, object inventory, units and FBX operator properties. Preserve existing work in every application. If using MoI's interactive fallback, inspect its current document before opening another file.
 
 Require one Rhino 7 process and export metadata using the bundled wrapper. Verify response `ok`, metadata `automation.request_id`, source path, document runtime serial number, units and modified state. Count top-level types and live InstanceReferences, and inspect definitions. Viewport appearance is not evidence that a model has been exploded.
 
@@ -27,7 +27,13 @@ Do not re-export over an existing file. A nonzero `.3dm` without its sidecar/res
 
 ## MoI meshing
 
-Open the validated transport copy, wait for loading and visually inspect the geometry. Use Save As/Export to a distinct ASCII `.fbx`. Do not save the Rhino source through MoI.
+Use `scripts/invoke_moi_export.ps1` with PowerShell 7 on a verified MoI build. The wrapper starts a separate process with `moi_export_job.js`, opens the validated Rhino 5 transport, compares the exact Brep tokens and count with the sidecar, checks the selection and exports via `fileExport`. It publishes a fresh FBX only after the process exits, the success marker is present, and the binary FBX header checks pass. Retain the original interactive MoI document and Rhino source.
+
+```powershell
+& '<skill>/scripts/invoke_moi_export.ps1' -MoiExe '<MoI.exe>' -TransportPath '<transport.3dm>' -OccurrencesPath '<occurrences.json>' -OutputFbx '<new mesh.fbx>' -WorkDirectory '<existing writable staging directory>'
+```
+
+Supply the version 2 sidecar for the same transport path and request. Pass only the actual transport occurrences. If a separately verified recovery path meshes some occurrences outside MoI, give the launcher a derived MoI-only manifest with those exact tokens removed and a corrected count. Keep the full manifest for final reconciliation. Never drop an unexpected missing token to pass the check.
 
 Use the originating pipeline's meshing preset unless the user specifies otherwise:
 
@@ -41,11 +47,11 @@ Use the originating pipeline's meshing preset unless the user specifies otherwis
 | Avoid smaller than | 0.5 |
 | Aspect ratio limit | 0 |
 
-These lengths use the MoI document's units; they are a meshing preset, not a geometric error bound. Verify the high-detail slider is consistent with Angle 3. Numeric fields may open a keypad: commit the field, wait for remeshing, and inspect the settled value before continuing. Prefer the separate dialog screenshot and its own screenshot ID when a scaled main-window screenshot produces ineffective input. Reobserve after failed input; do not assume an error or an immediate stale frame proves the action did not happen.
+These lengths use the MoI document's units. They specify tessellation settings rather than a geometric error bound. Check the chosen scope and pose in Rhino before meshing and inspect the model in Blender after the import checks. The wrapper returns the option string, build hash, run status path and FBX hash. Review the exported geometry for missing or damaged parts, especially thin, small and curved surfaces. Preview point counts can include rendering and normal splits. Check actual imported counts, tokens, topology, units, BBoxes and custom normals in Blender.
 
-MoI's developer documents `geometryDatabase.fileExport(path, options)` with `Angle`, `Output`, `MaxLength`, `MaxLengthApplyTo`, `MinLength`, `AspectRatio`, `Weld`, and `Display` options. Consult the installed command sources and [developer's parameter explanation](https://moi3d.com/forum/lmessages.php?msg=11689.7&webtag=MOI) before using a version-specific script. A scripted call still requires file and downstream geometry verification; do not assume `NoUI=true` proves settings or completion.
+Verified on MoI 5.0 beta Apr-27-2026 for Windows. When the executable changes, compare a small representative export with the known preset before using the batch path on production geometry. Consult the installed commands and [MoI's batch invocation](https://moi3d.com/forum/lmessages.php?msg=10884.2&webtag=MOI) and [meshing options](https://moi3d.com/forum/lmessages.php?msg=11689.7&webtag=MOI). Use the normal desktop process context if the sandbox prevents the batch job from starting. On timeout, inspect the exact PID and run directory before retrying. A partial FBX or a missing completion marker requires investigation.
 
-Require a nonzero FBX. Preview point counts can include rendering/normal splits; compare actual imported mesh counts and topology rather than requiring MoI preview points to equal Blender vertices.
+For an unverified build, an unexpected state or a requested mesher preview, use the Computer Use skill with the transport copy. Visually confirm the intended document and the mesher dialog before entering values, then confirm the settled preset and preview before exporting. Batch deterministic input between those checks only while the target window, layout and scaling match the observed state. Commit each numeric field and allow remeshing before inspecting settled values. Recheck the window after a modal, resize, DPI change or failed input. Use the dialog's own screenshot when main-window coordinates do not map to it. Verify the resulting FBX in Blender in either mode.
 
 ## Blender import and planning
 
