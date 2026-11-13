@@ -42,8 +42,12 @@ The exporter keeps schema version 2 for the reconstruction scripts. It includes:
 
 When the bundled metadata is insufficient and a read-only Rhino 7 probe is needed:
 
+- Save supplemental scripts as UTF-8 with `# -*- coding: utf-8 -*-` on the first line when they contain non-ASCII text. Rhino 7 uses IronPython 2.7: use Unicode path literals (`u"..."`) or ASCII `\uXXXX` escapes, and avoid Python 3-only syntax. A missing encoding declaration raises `SyntaxError: Non-ASCII character` before the script's `try/except` can run; validate source encoding and syntax before submitting through COM.
 - Convert CLR scalar values to the intended Python JSON types explicitly. For example, use `int(doc.RuntimeSerialNumber)`; a CLR number can print like an integer while IronPython's JSON encoder rejects it as `is not JSON serializable`. Preserve numeric fields as numbers rather than using a blanket string fallback. The bundled exporter already converts this field.
+- For file-object identity use `File3dmObject.Attributes.ObjectId`; document-object `Id` and attribute-object properties are different APIs. See [rhino-working-copy.md](rhino-working-copy.md) for ID-set validation and transport-scope recovery.
 - For a small probe response, call `json.dumps` before opening the destination for writing. A serialization failure must not truncate an existing response or leave partial JSON that looks like a result. Keep the bundled exporter's temporary-file publication strategy for full metadata.
 - Catch probe exceptions and return an `ok: false` response with the current request ID and traceback. When that failure response has been written successfully, do not re-raise into Rhino's interactive error dialog: it can hold a synchronous COM call until someone dismisses it. The caller must check the response, not just whether `RunScript` returned. If no valid response can be written, treat completion as unknown and inspect before retrying.
+
+If a synchronous COM call is waiting on a Rhino error dialog, inspect and dismiss that specific dialog, let the original call finish, and inspect its output before submitting a corrected probe. Do not queue another `RunScript` while the first call is still unresolved. Serialization or encoding failures in a status probe are not evidence that geometry export failed.
 
 These rules apply to supplemental probes; reuse the bundled exporter for the normal metadata snapshot.

@@ -22,6 +22,7 @@ Read [references/workflow.md](references/workflow.md) before operating the appli
 
 - Require exactly one Rhino process and identify the active Rhino document before any export.
 - Export metadata before any optional block explosion. Never decide from the viewport alone whether `ExplodeBlock` is needed.
+- Match the conversion copy to the metadata by object IDs, not counts alone; a complete `File3dm` export can contain objects outside the metadata snapshot. Use `File3dmObject.Attributes.ObjectId` when validating that copy.
 - Do not modify or overwrite the active Rhino source. Export the same in-memory state as the metadata, preserve its original identity and modified state, and prepare any Block expansion in a separate copy. Read [references/rhino-working-copy.md](references/rhino-working-copy.md) when preparing that copy.
 - Treat ASCII staging as temporary. After verification, consolidate the Rhino 5 and FBX artifacts into a source-side `codex_export_fbx` folder, verify collisions by hash, and remove the empty staging directory.
 - Do not use C4D `obj*` names or object order as identity.

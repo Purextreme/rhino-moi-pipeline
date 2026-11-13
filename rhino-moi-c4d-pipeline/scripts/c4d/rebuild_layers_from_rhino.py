@@ -268,7 +268,14 @@ def validate_scene(doc, metadata):
                 ROOT_NAME
             )
         )
-    if metadata.get("counts", {}).get("instance_definitions", 0):
+    # Unused definitions do not require Block reconstruction.
+    live_instances = metadata.get("counts", {}).get("top_level_instance_references", 0)
+    live_instances = live_instances or any(
+        item.get("type") == "InstanceReference"
+        or (item.get("block") or {}).get("is_instance_reference", False)
+        for item in metadata.get("objects", [])
+    )
+    if live_instances:
         raise RuntimeError(
             "This script rebuilds flat Layer hierarchy only; use the Block hierarchy script instead"
         )

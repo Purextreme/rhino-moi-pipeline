@@ -28,6 +28,21 @@ Validate the output independently: require a nonzero file, reopen it as a `File3
 
 Serialize response JSON with `ensure_ascii=True`. Treat file publication and response publication as separate commit points, as described in [workflow.md](workflow.md).
 
+## Match the transport copy to the metadata scope
+
+In Rhino 7, `doc.Write3dmFile` and the active document's object enumeration need not expose the same object set. A full file copy can include hidden or otherwise unenumerated objects, plus unused definition members. A count assertion failure does not establish invalid geometry or a failed write.
+
+Before opening the copy in MoI:
+
+1. Reopen the existing copy as a `File3dm`. For each file object use `item.Attributes.ObjectId`; `ObjectAttributes` does not expose the Rhino document object's `Id` property. Exclude `Attributes.IsInstanceDefinitionObject` when comparing top-level objects, and keep definition records separate.
+2. Compare the complete top-level ID set with the current metadata's `objects[*].id`, not just its size. Inspect missing and extra objects by ID, type, mode, layer, and definition membership. Do not label every extra object as hidden, deleted, or historical without evidence.
+3. Establish the intended conversion scope. If the metadata represents that scope, filter only a separate in-memory `File3dm` to those top-level IDs and write a new, distinct transport file. Keep the full copy and source intact. Retain definitions needed by live instances. If an excluded object belongs in the requested model, obtain a metadata snapshot covering it before conversion instead of silently dropping it.
+4. Reopen the new transport file and require exact top-level ID-set equality, valid supported geometry, valid layer references, and unchanged source identity and modified state. For expanded Block copies, validate occurrence keys and the expansion manifest instead of requiring original instance IDs on newly created geometry.
+
+An existing nonzero output may come from a completed file write: reopen and validate it before retrying. File existence or size alone does not establish success. Repair a failed response or validation separately; never overwrite an existing conversion file merely because the response failed.
+
+Choose Layer versus Block reconstruction from live top-level instance references. An unused definition table does not make the transport a Block assembly.
+
 ## Expand Block occurrences outside the source document
 
 Use the original metadata to walk each top-level occurrence recursively. Carry an occurrence key, parent key, Block path, and accumulated transform; multiply the outer transform by the nested instance transform. Detect cycles on the current recursion path, so repeated uses of the same definition remain valid.
