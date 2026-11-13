@@ -1,5 +1,10 @@
+import hashlib
 import itertools
 import json
+import math
+from statistics import median
+import struct
+from uuid import UUID
 
 import c4d
 
@@ -9,6 +14,7 @@ ROOT_NAME = globals().get("ROOT_NAME", "RHINO_METADATA_REBUILT")
 GEOMETRY_TYPES = ("Brep", "Extrusion", "Mesh", "Surface", "SubD")
 MAX_MATCH_ERROR = float(globals().get("MAX_MATCH_ERROR", 0.1))
 MAX_AMBIGUOUS_GAP = float(globals().get("MAX_AMBIGUOUS_GAP", 0.0001))
+USE_SOURCE_IDS = globals().get("USE_SOURCE_IDS", False) is True
 
 
 def exact_world_bbox(obj):
@@ -157,9 +163,90 @@ def polygon_material_names(polygon):
     return names
 
 
+def source_id_assignment(rhino_geometry, polygons):
+    expected = []
+    for item in rhino_geometry:
+        try:
+            source_id = UUID(item.get("id"))
+        except (ValueError, TypeError, AttributeError):
+            raise RuntimeError("Source-ID matching requires a valid UUID for every Rhino object")
+        if not source_id.int:
+            raise RuntimeError("Source-ID matching requires nonzero Rhino UUIDs")
+        expected.append("RHINO_ID_" + source_id.hex)
+    if len(set(expected)) != len(expected):
+        raise RuntimeError("Duplicate source IDs in Rhino metadata")
+
+    by_name = {polygon.GetName(): index for index, polygon in enumerate(polygons)}
+    if len(by_name) != len(polygons):
+        raise RuntimeError("Duplicate polygon names in source-ID import")
+    if by_name.keys() != set(expected):
+        raise RuntimeError("Imported source-ID names must exactly match the Rhino ID set")
+    return [by_name[name] for name in expected]
+
+
+def match_source_ids(rhino_geometry, polygons, polygon_bboxes):
+    assignment = source_id_assignment(rhino_geometry, polygons)
+    if any(polygon.GetDown() is not None for polygon in polygons):
+        raise RuntimeError("Source-ID matching requires a flat polygon-only C4D import")
+    if any(sum(tag.CheckType(c4d.Tnormal) for tag in polygon.GetTags()) != 1
+           for polygon in polygons):
+        raise RuntimeError("Source-ID matching requires one Normal tag on every polygon")
+    if not math.isfinite(MAX_MATCH_ERROR) or MAX_MATCH_ERROR < 0:
+        raise RuntimeError("MAX_MATCH_ERROR must be finite and nonnegative")
+    for item in rhino_geometry:
+        bbox = item.get("bbox")
+        if not bbox or not all(
+            math.isfinite(bbox["min"][axis]) and math.isfinite(bbox["max"][axis])
+            and bbox["min"][axis] <= bbox["max"][axis] for axis in "xyz"
+        ):
+            raise RuntimeError("Source-ID matching requires valid Rhino bounding boxes")
+    imported = [polygon_bboxes[index] for index in assignment]
+    if not all(math.isfinite(value) for bbox in imported for side in ("min", "max")
+               for value in bbox[side]):
+        raise RuntimeError("Source-ID matching requires finite C4D bounding boxes")
+
+    # UUIDs fix the pairing. One common transform must fit every paired box.
+    target_centers = [bbox_center(bbox) for bbox in imported]
+    best = None
+    for permutation in itertools.permutations((0, 1, 2)):
+        for signs in itertools.product((-1, 1), repeat=3):
+            mapped = [rhino_bbox_mapped(item, permutation, signs) for item in rhino_geometry]
+            source_centers = [bbox_center(bbox) for bbox in mapped]
+            offset = [median(right[axis] - left[axis]
+                             for left, right in zip(source_centers, target_centers))
+                      for axis in range(3)]
+            for translation in ([0.0, 0.0, 0.0], offset):
+                translated = [translate_bbox(bbox, translation) for bbox in mapped]
+                errors = [bbox_error(left, right) for left, right in zip(translated, imported)]
+                candidate = (max(errors), sum(errors), permutation, signs, translation, errors)
+                if best is None or candidate[:2] < best[:2]:
+                    best = candidate
+    maximum, _, permutation, signs, translation, errors = best
+    if not math.isfinite(maximum) or maximum > MAX_MATCH_ERROR:
+        raise RuntimeError(
+            "Source-ID BBox matching is not reliable: max error {0:.6f} exceeds {1:.6f}".format(
+                maximum, MAX_MATCH_ERROR
+            )
+        )
+    mapped = [translate_bbox(rhino_bbox_mapped(item, permutation, signs), translation)
+              for item in rhino_geometry]
+    return assignment, {
+        "mapping": mapping_name(permutation, signs),
+        "translation": translation,
+        "max_error": maximum,
+        "median_error": median(errors),
+        "overall_bbox_error": bbox_error(union_bbox(mapped), union_bbox(imported)),
+        "source_id_matches": len(assignment),
+        "ambiguous": 0,
+        "material_tiebreak_resolved": 0,
+    }
+
+
 def match_geometry(rhino_geometry, polygons):
     polygon_bboxes = [exact_world_bbox(obj) for obj in polygons]
     c4d_overall = union_bbox(polygon_bboxes)
+    if USE_SOURCE_IDS:
+        return match_source_ids(rhino_geometry, polygons, polygon_bboxes)
     candidates = []
     for permutation in itertools.permutations((0, 1, 2)):
         for signs in itertools.product((-1, 1), repeat=3):
@@ -323,6 +410,18 @@ def geometry_name(item, index, count):
     return "{0}__Geo_{1:03d}".format(layer_name, index + 1)
 
 
+def world_geometry_signature(polygon):
+    digest = hashlib.sha256()
+    digest.update(struct.pack(">2I", polygon.GetPointCount(), polygon.GetPolygonCount()))
+    matrix = polygon.GetMg()
+    for point in polygon.GetAllPoints():
+        world = point * matrix
+        digest.update(struct.pack(">3d", world.x, world.y, world.z))
+    for face in polygon.GetAllPolygons():
+        digest.update(struct.pack(">4I", face.a, face.b, face.c, face.d))
+    return digest.digest()
+
+
 def main():
     if METADATA_PATH == r"C:\path\to\rhino_metadata.json":
         raise RuntimeError("Set METADATA_PATH before running this script")
@@ -332,6 +431,8 @@ def main():
     doc = c4d.documents.GetActiveDocument()
     rhino_geometry, polygons = validate_scene(doc, metadata)
     assignment, match = match_geometry(rhino_geometry, polygons)
+    if USE_SOURCE_IDS:
+        before_geometry = [world_geometry_signature(polygon) for polygon in polygons]
 
     layer_counts = {}
     for item in rhino_geometry:
@@ -339,6 +440,7 @@ def main():
         layer_counts[path] = layer_counts.get(path, 0) + 1
     layer_indices = {}
     layer_nodes = {}
+    restored_names = []
 
     doc.StartUndo()
     try:
@@ -359,7 +461,10 @@ def main():
             doc.AddUndo(c4d.UNDOTYPE_CHANGE, polygon)
             polygon.InsertUnderLast(parent)
             polygon.SetMg(global_matrix)
-            polygon.SetName(geometry_name(item, layer_index, layer_counts[path]))
+            name = geometry_name(item, layer_index, layer_counts[path])
+            polygon.SetName(name)
+            if USE_SOURCE_IDS:
+                restored_names.append(name)
     finally:
         doc.EndUndo()
 
@@ -367,13 +472,19 @@ def main():
     remaining_generic = sum(
         1 for polygon in polygons if polygon.GetName().lower().startswith("obj")
     )
+    names_verified = remaining_generic == 0
+    if USE_SOURCE_IDS:
+        names_verified = [polygons[index].GetName() for index in assignment] == restored_names
+        geometry_unchanged = before_geometry == [
+            world_geometry_signature(polygon) for polygon in polygons
+        ]
     global _result
     _result = {
         "execution_ok": True,
         "verification_ok": (
             len(doc.GetObjects()) == 1
             and doc.GetObjects()[0].GetName() == ROOT_NAME
-            and remaining_generic == 0
+            and names_verified
         ),
         "request_id": metadata.get("automation", {}).get("request_id"),
         "container": ROOT_NAME,
@@ -383,6 +494,9 @@ def main():
         "top_level_objects": len(doc.GetObjects()),
         "match": match,
     }
+    if USE_SOURCE_IDS:
+        _result["world_geometry_unchanged"] = geometry_unchanged
+        _result["verification_ok"] = _result["verification_ok"] and geometry_unchanged
 
 
 main()

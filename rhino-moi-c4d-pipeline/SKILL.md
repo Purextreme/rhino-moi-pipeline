@@ -45,7 +45,7 @@ Experience logging must not interrupt recovery or delay the user's primary task.
 
 - If live top-level Rhino instance references exist, expand Block occurrences and reconstruct the Block tree.
 - If the export is already exploded, reconstruct the Rhino Layer tree.
-- If Rhino geometry and C4D polygon counts are equal, solve a global BBox assignment and reject ambiguity.
+- If Rhino geometry and C4D polygon counts are equal, solve a global BBox assignment. For ambiguous Layer imports with coincident BBoxes and materials, follow the verified source-ID transport route in [references/workflow.md](references/workflow.md#5-geometry-matching).
 - If C4D contains extra polygons, test whether MoI split Rhino Breps by face material. First assign every Rhino Brep one-to-one, then attach only the leftover meshes that are spatially contained by a matched Brep with an unambiguous source layer. Never force equal counts by index.
 
 `scripts/c4d/rebuild_layers_from_rhino.py` is a reusable equal-count Layer-mode implementation. Do not use it for Block mode or split-mesh leftovers; generate a task-specific guarded mutation through `c4d-remote-executor` for those cases.

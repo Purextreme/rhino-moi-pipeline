@@ -43,6 +43,12 @@ An existing nonzero output may come from a completed file write: reopen and vali
 
 Choose Layer versus Block reconstruction from live top-level instance references. An unused definition table does not make the transport a Block assembly.
 
+## Carry source IDs through an equal-count Layer export
+
+When equal BBoxes and materials leave the Layer assignment ambiguous, start with the scope-validated transport file above and the original metadata snapshot. Keep the source and that transport file intact. Through the Rhino 7 scripting entry point, load [prepare_source_id_copy.py](../scripts/rhino-metadata/prepare_source_id_copy.py) into the script namespace and call `prepare_source_id_copy(metadata_path, input_path, output_path)` with absolute paths. Publish its returned request ID and result through the same response mechanism used for Rhino probes. The helper stamps each supported top-level geometry's `Attributes.Name` with `RHINO_ID_` followed by the 32 lowercase UUID hex digits, writes a separate Rhino 5 file and reopens it to verify the ID set and names. The original names come from the metadata snapshot.
+
+Open the verified tagged file in MoI and export to a fresh FBX using the normal meshing settings. After import, use the [source-ID matching and acceptance steps](workflow.md#5-geometry-matching). This path expects exactly one C4D Polygon per tagged source object. Use the established Block or split-mesh workflow for those modes.
+
 ## Expand Block occurrences outside the source document
 
 Use the original metadata to walk each top-level occurrence recursively. Carry an occurrence key, parent key, Block path, and accumulated transform; multiply the outer transform by the nested instance transform. Detect cycles on the current recursion path, so repeated uses of the same definition remain valid.

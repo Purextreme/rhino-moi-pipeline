@@ -71,6 +71,8 @@ For equal counts:
 5. Record how many assignments the material tie-break resolved and independently verify that each resolved Polygon is under the expected Layer Null with the expected material.
 6. Reject excessive maximum error or unresolved equal-cost candidates.
 
+If coincident BBoxes and the material tie-break leave a flat equal-count Layer import ambiguous, use a fresh [source-ID transport copy](rhino-working-copy.md#carry-source-ids-through-an-equal-count-layer-export). The complete imported token set must match the geometry IDs in the same Rhino metadata snapshot, with each token appearing exactly once. The tokens establish correspondence. Fit one axis permutation, sign combination and translation to the paired world BBoxes and reject any object outside the accepted tolerance. The supplied matcher expects the Rhino and C4D coordinates to be in the same units. If the import introduces a scale change, correct and verify the units before matching.
+
 For `C4D Polygon count > Rhino Brep count`:
 
 1. Globally assign every Rhino Brep to a unique C4D Polygon.
@@ -86,6 +88,8 @@ Curves and points must not be silently treated as Breps. If MoI does not emit co
 Choose Block or Layer reconstruction from the metadata, not from C4D names.
 
 For an equal-count Layer scene, `scripts/c4d/rebuild_layers_from_rhino.py` is the maintained starting implementation. Inject `METADATA_PATH` and evidence-backed thresholds before sending it through `c4d-remote-executor`. It intentionally rejects Block mode and count differences.
+
+For the verified source-ID import, also inject `USE_SOURCE_IDS = True`. Missing, duplicate or changed tokens and excessive BBox error stop this route before hierarchy mutation. The rebuild restores the source names or the usual Layer-derived names for unnamed geometry.
 
 Before mutation validate the active document name, polygon count, topology, Normal tags, material tags, names, BBoxes, and metadata request ID. Then:
 
@@ -110,6 +114,7 @@ Run an independent read-only probe and retain the following evidence. Summarize 
 - hierarchy depth;
 - per-object and overall world-BBox errors;
 - the unordered per-Polygon topology/geometry signature `(point_count, polygon_count, exact_world_bbox)` before and after hierarchy mutation;
+- for source-ID matching, verify each Polygon's restored name and Layer path, and compare world vertex coordinates and face indices before and after mutation within the same FBX import. Separate MoI exports can triangulate differently with the same settings;
 - every material-resolved tie-break path and its final material;
 - C4D protection backup path/hash when available;
 - whether the final document was saved or intentionally left open and unsaved.
