@@ -14,34 +14,17 @@
 
 ## 仓库结构
 
-```text
-rhino-moi-c4d-pipeline/
-├── SKILL.md
-├── agents/
-├── improvements/
-├── references/
-└── scripts/
-```
+仓库根目录就是 Codex Skill。入口为 [SKILL.md](SKILL.md)，脚本、参考资料和离线测试分别位于 [scripts/](scripts/)、[references/](references/) 和 [tests/](tests/)。
 
-仓库内层的 `rhino-moi-c4d-pipeline/` 目录是可以直接安装的 Skill。仓库级说明文件有意放在该目录之外，避免安装时混入 Skill 本体。
+## 安装与维护
 
-## 安装方法
+首次安装时，先安装 [c4d-remote-executor](https://github.com/Purextreme/C4D_remote_script_bridge) 并按其说明配置 Cinema 4D 插件。目标目录尚不存在时，直接克隆到 Codex 的 Skills 目录。
 
-可以直接让 Codex 从以下地址安装：
+~~~powershell
+git clone https://github.com/Purextreme/rhino-moi-c4d-pipeline.git "$env:USERPROFILE\.codex\skills\rhino-moi-c4d-pipeline"
+~~~
 
-```text
-https://github.com/Purextreme/rhino-moi-c4d-pipeline/tree/main/rhino-moi-c4d-pipeline
-```
-
-也可以直接调用 Codex 内置的 Skill 安装器：
-
-```powershell
-python "$env:USERPROFILE\.codex\skills\.system\skill-installer\scripts\install-skill-from-github.py" `
-  --repo Purextreme/rhino-moi-c4d-pipeline `
-  --path rhino-moi-c4d-pipeline
-```
-
-安装完成后请重启 Codex，以便发现并加载新 Skill。
+在此目录编辑、测试和提交。新开 Codex 会话后可调用 `$rhino-moi-c4d-pipeline`。改进候选留在本机的 [改进队列](improvements/RULES.md) 中。
 
 ## 适用范围
 
