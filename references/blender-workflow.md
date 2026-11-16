@@ -1,0 +1,92 @@
+# Workflow
+
+## Preflight and Rhino snapshot
+
+Load `blender-playbook`. Confirm Blender MCP can read the intended running instance; capture Blender version, current file/Scene, dirty state, object inventory, units and FBX operator properties. Preserve existing work in every application. If using MoI's interactive fallback, inspect its current document before opening another file.
+
+Follow [shared preflight and snapshot](rhino-moi-common.md#preflight-and-snapshot) and [metadata bridge](rhino-metadata-export.md). Retain the baseline for semantic acceptance. Runtime files remain outside the Skill.
+
+## Rhino 5 transport and occurrence sidecar
+
+Run `invoke_working_copy.ps1` with the current metadata, distinct `.3dm` and sidecar paths. Its bundled script:
+
+1. Builds fresh live metadata and requires semantic equality with the baseline before copying.
+2. Creates a separate in-memory `File3dm` using the live document's units/tolerance.
+3. Walks top-level geometry and nested Blocks. Multiplies outer-to-inner instance transforms, detects definition cycles along the current recursion path, and gives each occurrence a separate key.
+4. Duplicates and transforms supported geometry without changing the source. Uses `ObjectAttributes.ObjectId` for new transport IDs and a unique `RB_...` token for each geometry occurrence.
+5. Makes standalone transport attributes Normal and visible so definition-only or hidden flags cannot silently remove geometry in MoI. Source visibility/locking remain recorded for reconstruction. Source Layer identity remains in the sidecar; temporary MoI style names are not reconstruction identity.
+6. Reopens the Rhino 5 file to validate geometry, count, tokens and standalone modes. Rechecks source identity and modified state before publishing the sidecar.
+
+The version 2 sidecar is the authoritative occurrence schema. `occurrences` contains `key`, `parent`, `source_id`, `transport_name`, source `layer`/name/type/display metadata, and the BBox measured from transformed geometry. `blocks` contains occurrence keys, parent keys, definition IDs/names and accumulated world matrices. Both carry effective visibility and locking computed through object, Layer and Block ancestry. A visible definition member inside a hidden/locked Block must remain effectively hidden/locked in Blender. `omitted` lists each excluded non-mesh object.
+
+The bundled script accepts Breps, Surface and Extrusion conversion. It does not claim Mesh/SubD or arbitrary annotation support. Stop for a dedicated adapter on unsupported meshable geometry. Curves/points require a separate explicitly requested conversion if they must appear in Blender.
+
+Do not re-export over an existing file. A nonzero `.3dm` without its sidecar/response is a partial commit; inspect the file, request ID and source state before recovering. Do not silently overwrite it.
+
+## MoI meshing
+
+Use `scripts/invoke_moi_export.ps1` with PowerShell 7 on a verified MoI build. The wrapper starts a separate process with `moi_export_job.js`, opens the validated Rhino 5 transport, compares the exact Brep tokens and count with the sidecar, checks the selection and exports via `fileExport`. It publishes a fresh FBX only after the process exits, the success marker is present, and the binary FBX header checks pass. Retain the original interactive MoI document and Rhino source.
+
+```powershell
+& '<skill>/scripts/invoke_moi_export.ps1' -MoiExe '<MoI.exe>' -TransportPath '<transport.3dm>' -OccurrencesPath '<occurrences.json>' -OutputFbx '<new mesh.fbx>' -WorkDirectory '<existing writable staging directory>'
+```
+
+Supply the version 2 sidecar for the same transport path and request. Pass only the actual transport occurrences. If a separately verified recovery path meshes some occurrences outside MoI, give the launcher a derived MoI-only manifest with those exact tokens removed and a corrected count. Keep the full manifest for final reconciliation. Never drop an unexpected missing token to pass the check.
+
+Apply the [common MoI preset](rhino-moi-common.md#common-moi-preset) unless the user specifies otherwise.
+
+These lengths use the MoI document's units. They specify tessellation settings rather than a geometric error bound. Check the chosen scope and pose in Rhino before meshing and inspect the model in Blender after the import checks. The wrapper returns the option string, build hash, run status path and FBX hash. Review the exported geometry for missing or damaged parts, especially thin, small and curved surfaces. Preview point counts can include rendering and normal splits. Check actual imported counts, tokens, topology, units, BBoxes and custom normals in Blender.
+
+Verified on MoI 5.0 beta Apr-27-2026 for Windows. When the executable changes, compare a small representative export with the known preset before using the batch path on production geometry. Consult the installed commands and [MoI's batch invocation](https://moi3d.com/forum/lmessages.php?msg=10884.2&webtag=MOI) and [meshing options](https://moi3d.com/forum/lmessages.php?msg=11689.7&webtag=MOI). Use the normal desktop process context if the sandbox prevents the batch job from starting. On timeout, inspect the exact PID and run directory before retrying. A partial FBX or a missing completion marker requires investigation.
+
+For an unverified build, an unexpected state or a requested mesher preview, use the Computer Use skill with the transport copy. Visually confirm the intended document and the mesher dialog before entering values, then confirm the settled preset and preview before exporting. Batch deterministic input between those checks only while the target window, layout and scaling match the observed state. Commit each numeric field and allow remeshing before inspecting settled values. Recheck the window after a modal, resize, DPI change or failed input. Use the dialog's own screenshot when main-window coordinates do not map to it. Verify the resulting FBX in Blender in either mode.
+
+## Blender import and planning
+
+Use `blender_pipeline.py` through MCP, following [blender-operations.md](blender-operations.md). A new Scene isolates the model; original scenes and objects remain present. Require all expected meshes and imported custom normals. The initial stage refuses an existing import Scene to avoid duplicates.
+
+First use `diagnose` to inspect mapping and per-occurrence errors. Physical length comes from Rhino document units and Blender Scene unit scale, not the displayed length-unit label. The helper creates and verifies a METRIC Scene with `scale_length=1.0` (one Blender unit = one meter); changing that scale after import must fail planning/rebuilding/verification. Blender's importer may honor FBX units/axes itself; do not add another 0.001 scale or rotate the model without measured evidence.
+
+The bundled planner groups only exact controlled transport tokens (with Blender numeric suffixes permitted for verified split parts), evaluates signed axis permutations at the known physical scale, and estimates translation from multiple token-paired object centers. Require a unique mapping, every group present, source-envelope containment and accepted BBox error for every occurrence. It never matches by the ordinal encoded in a token.
+
+Set `bbox_tolerance_source_units` from units, intended use and actual meshing evidence. CAD analytic BBoxes and tessellated mesh BBoxes can differ. On a failed tolerance check inspect the worst objects: verify identity, orientation, scale, trimming and curved extrema. Do not merely increase tolerance until the check passes. If quality is inadequate, revise meshing and repeat from a fresh import Scene with a new checked FBX.
+
+The bundled planner refuses lost/unknown tokens, even for equal counts. If accepting an external FBX without controlled names, create a separate global BBox assignment with an explicit ambiguity check; do not weaken this planner or force assignments by object order/material names. For excess meshes, accept only groups that retain unique controlled provenance and pass union-envelope and per-part containment checks. Otherwise stop for inspection.
+
+## Hierarchy and verification
+
+Reconstruction must use the checked plan and unchanged FBX/sidecar hashes. Validate active Scene, request ID, imported mesh set, matrices, geometry, custom normals and material signatures before the first hierarchy side effect.
+
+Create one model packaging Collection and a root Empty. Represent full Layer paths and nested Block occurrences with Empty parent objects. A mesh or Block attaches to the appropriate Layer Empty within its enclosing Block scope; repeat Layer paths inside different Block scopes when necessary to preserve both hierarchies. Only create Layer nodes that lead to imported objects; retain populated sublayer ancestors and omit entirely empty branches. Do not delete hidden meshes, source geometry or unrelated data as cleanup. Block transforms are `source_to_blender @ source_world_matrix @ inverse(source_to_blender)`. Reparent meshes and Blocks with a saved `matrix_world`, then restore it and update the dependency graph. Keep imported mesh data and materials intact. Source visibility/locking should be represented on the new data only; retain original Layer/Block IDs and full paths as properties even when Blender adds name suffixes.
+
+Inspect both MCP and script result fields. The reconstruction first runs strict import verification before its default cleanup. Require at that boundary:
+
+- one imported group for every supported source occurrence and no unassigned meshes;
+- expected Layer/Block Empty parent graph, one model Collection, and no unused Layer branches;
+- correct physical scale and object-level BBoxes within the accepted CAD-to-mesh tolerance;
+- unchanged mesh vertex/loop/polygon data, custom normal signatures, material slots and polygon material indices across hierarchy mutation;
+- unchanged world matrices and near-zero world-BBox drift after parenting;
+- original Blender objects/scenes and file identity preserved;
+- fresh Rhino metadata semantically equal to the original document/object/Layer/definition snapshot, excluding request-specific automation fields, including unchanged modified state.
+
+Frame the imported model in a 3D View and inspect a screenshot. Viewport shading can improve readability without replacing materials or changing geometry. A framing failure is not an import failure. Keep preview rigs separate from model contents when an appearance finish needs a render. Final `.blend` saving still requires the user's requested destination or approval.
+
+## Default post-processing
+
+Follow [post-processing.md](post-processing.md). `rebuild` automatically bakes Scale/delta Scale to one after strict conversion checks. It conditionally centers mesh origins when all mesh origins share world zero, preserves intentional group pivots and texture controls, verifies original/evaluated world geometry, normals and UVs against a separate cleanup receipt, and audits outward orientation. Local coordinates and object matrices intentionally change; preserve the original reconstruction plan instead of overwriting it. Supply new cleanup receipt/backup paths before `rebuild`.
+
+Call `verify` independently after rebuilding and viewport framing; after cleanup it checks the cleanup receipt and input hashes. Use `audit_normals` for details and inspect Face Orientation. Report suspected inward and uncertain open/cavity/self-intersecting objects with names/reasons; do not blanket recalculate custom normals. On an already edited scene, preserve current contents and use the guarded standalone cleanup rather than rerunning the old reconstruction.
+
+## Final artifact consolidation
+
+Follow [shared artifact consolidation](rhino-moi-common.md#artifact-consolidation), retaining metadata, occurrence sidecar, reconstruction plan, cleanup receipt and protection copies in addition to Rhino 5 and FBX files. Switch the pipeline Scene's manifest/plan/cleanup paths to the consolidated files, pass those paths to `verify`, and verify again. Cleanup input hashes allow a relocated input only when its bytes match. Historical paths inside sidecars/receipts remain provenance; use consolidated paths for future operations.
+
+Remove a temporary transport directory only after proving it empty, without recursive deletion. Keep scripts and model-specific results separate.
+
+After strict consolidation verification, link normal findings into separate review Collections as described in [post-processing.md](post-processing.md#review-collections). Preserve original memberships and parents and verify this membership-only organization separately; do not rerun the strict baseline verifier and disguise the expected membership difference as a successful unchanged check.
+
+## Optional appearance and completion
+
+After conversion, consolidation and the independent import `verify` have passed, follow [preview-materials.md](preview-materials.md) when the user supplied model appearance references, product-page links or texture assets. Complete the simple material/texture finish and its visual and structural checks before reporting completion. No supplied appearance reference means skip this stage, preserve imported shaders and optionally ask one short material follow-up at the end. Do not block the transfer waiting for optional resources or a follow-up answer.
+
+Summarize conversion outcome, omitted geometry, artifact location and save state in chat. If appearance work ran, include the sources actually inspected, materials/textures applied, visual verification and remaining approximations. A separate case report is optional, not required.

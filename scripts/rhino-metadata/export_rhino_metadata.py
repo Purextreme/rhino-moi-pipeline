@@ -2,25 +2,13 @@
 """Export the active Rhino 7 document's metadata for a Codex request.
 
 Run through Rhino.Interface.7 and RunPythonScript. The script reads a request
-from the local Codex RhinoMetadataExport directory and never modifies the document.
+from the per-request bridge runner and never modifies the document.
 """
 
 import datetime
-import io
-import json
-import os
-import traceback
 
 import Rhino
 import scriptcontext as sc
-
-
-BRIDGE_DIRECTORY = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "Codex",
-    "RhinoMetadataExport",
-)
-REQUEST_PATH = os.path.join(BRIDGE_DIRECTORY, "request.json")
 
 
 def utc_text():
@@ -236,28 +224,6 @@ def layer_records(doc):
     return layers
 
 
-def read_request():
-    with io.open(REQUEST_PATH, "r", encoding="utf-8-sig") as stream:
-        request = json.load(stream)
-    required = ("request_id", "output_path", "response_path")
-    for key in required:
-        if not request.get(key):
-            raise ValueError("Request is missing required field: {0}".format(key))
-    return request
-
-
-def atomic_write_json(path, value, request_id):
-    directory = os.path.dirname(path)
-    if not os.path.isdir(directory):
-        os.makedirs(directory)
-    temporary_path = "{0}.{1}.tmp".format(path, request_id)
-    with io.open(temporary_path, "w", encoding="utf-8") as stream:
-        json.dump(value, stream, ensure_ascii=False, indent=2)
-    if os.path.exists(path):
-        os.remove(path)
-    os.rename(temporary_path, path)
-
-
 def build_metadata(doc, request_id):
     definitions, definition_lookup = instance_definition_records(doc)
     objects = []
@@ -292,6 +258,7 @@ def build_metadata(doc, request_id):
             "name": doc.Name,
             "path": doc.Path,
             "runtime_serial_number": int(doc.RuntimeSerialNumber),
+            "modified": bool(doc.Modified),
             "model_units": safe_enum_name(doc.ModelUnitSystem),
             "absolute_tolerance": float(doc.ModelAbsoluteTolerance),
         },
@@ -317,52 +284,3 @@ def build_metadata(doc, request_id):
         "instance_definitions": definitions,
         "objects": objects,
     }
-
-
-def main():
-    request = None
-    try:
-        request = read_request()
-        metadata = build_metadata(sc.doc, request["request_id"])
-        atomic_write_json(request["output_path"], metadata, request["request_id"])
-        response = {
-            "schema_version": 1,
-            "request_id": request["request_id"],
-            "ok": True,
-            "output_path": request["output_path"],
-            "output_bytes": int(os.path.getsize(request["output_path"])),
-            "document": metadata["document"],
-            "counts": metadata["counts"],
-            "exported_utc": metadata["automation"]["exported_utc"],
-        }
-        atomic_write_json(request["response_path"], response, request["request_id"])
-        print("Rhino metadata exported: {0}".format(request["output_path"]))
-        print("Request: {0}; top-level objects: {1}; block definitions: {2}".format(
-            request["request_id"],
-            metadata["counts"]["top_level_objects"],
-            metadata["counts"]["instance_definitions"],
-        ))
-    except Exception as error:
-        details = traceback.format_exc()
-        if request is not None and request.get("response_path"):
-            response = {
-                "schema_version": 1,
-                "request_id": request.get("request_id"),
-                "ok": False,
-                "message": str(error),
-                "traceback": details,
-                "exported_utc": utc_text(),
-            }
-            try:
-                atomic_write_json(
-                    request["response_path"], response, request.get("request_id", "unknown")
-                )
-            except Exception:
-                pass
-        print("Rhino metadata export failed: {0}".format(error))
-        print(details)
-        raise
-
-
-if __name__ == "__main__":
-    main()

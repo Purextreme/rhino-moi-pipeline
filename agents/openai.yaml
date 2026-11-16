@@ -1,4 +1,4 @@
 interface:
-  display_name: "Rhino MoI C4D Pipeline"
-  short_description: "Rebuild C4D hierarchy through Rhino and MoI"
-  default_prompt: "Use $rhino-moi-c4d-pipeline to process the open Rhino model through MoI and rebuild its C4D hierarchy."
+  display_name: "Rhino MoI Pipeline"
+  short_description: "将 Rhino 经 MoI 交接到 Blender 或 Cinema 4D，保留源状态并验收层级、法线和比例"
+  default_prompt: "使用 $rhino-moi-pipeline，将当前 Rhino 模型经 MoI 交接到我指定的 Blender 或 Cinema 4D，按目标分支保留源文件并完成验收。"

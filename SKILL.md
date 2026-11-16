@@ -1,53 +1,19 @@
 ---
-name: rhino-moi-c4d-pipeline
-description: Run the complete Rhino 7 to Rhino 5 to MoI FBX to Cinema 4D handoff, including bundled Rhino metadata export and metadata-driven Layer or Block hierarchy reconstruction. Requires the external c4d-remote-executor Skill. Use for end-to-end Rhino to MoI to C4D reconstruction, not for ordinary C4D-only edits.
+name: rhino-moi-pipeline
+description: Transfer active Rhino geometry through a protected Rhino 5 working copy and MoI FBX to Blender or Cinema 4D, retaining source state, target-specific identity and hierarchy, custom normals and scale verification. Use for end-to-end Rhino to MoI handoffs, not target-only editing.
 ---
 
-# Rhino to MoI to C4D Pipeline
+# Rhino → MoI pipeline
 
-Complete the geometry and hierarchy handoff while preserving the open source documents and refusing ambiguous reconstruction.
+Choose the requested target before loading target documentation. If it is unspecified and cannot be inferred, ask for Blender or Cinema 4D before application operations.
 
-Read [references/workflow.md](references/workflow.md) before operating the applications. It contains the required MoI settings, mode selection, validation gates, and recovery rules. Before exporting Rhino metadata, also read [references/rhino-metadata-export.md](references/rhino-metadata-export.md).
+- **Blender**: read [Blender contract](references/blender-target.md) and [workflow](references/blender-workflow.md). Requires Blender MCP and external `blender-playbook`; load that Skill for operations. Follow the linked operation, cleanup and normal-review documents when reaching those stages. Load [preview materials](references/preview-materials.md) only when supplied appearance references/assets activate that stage.
+- **Cinema 4D / C4D**: read [C4D contract](references/c4d-target.md) and [workflow](references/c4d-workflow.md). Load external `c4d-remote-executor` before C4D operations; stop if unavailable. All probes, backups, Undo-protected changes and independent acceptance use that dependency.
 
-## Required capabilities
+Both routes read [shared Rhino/MoI gates](references/rhino-moi-common.md) and [metadata bridge](references/rhino-metadata-export.md) before export. Working-copy instructions are loaded for the selected target only. The bundled metadata exporter is internal, with no separate metadata Skill dependency. Runtime evidence and model artifacts belong outside this Skill.
 
-- The Rhino metadata exporter is an internal component under `scripts/rhino-metadata/`; do not look for, invoke, or recreate a separate `rhino-metadata-export` Skill.
-- At the start of every run, load and follow the external `c4d-remote-executor` Skill. It is a mandatory dependency because it owns C4D SDK guidance, protected mutation, recovery inspection, and verification. If it is unavailable, stop and report the missing dependency.
-- Use the bundled Rhino metadata component for the active Rhino 7 snapshot and its process/document safety checks. It uses Rhino COM and is not a Rhino plug-in; the user does not run ScriptEditor manually.
-- Use `c4d-remote-executor` for every C4D probe, protected mutation, recovery inspection, preview, and independent verification pass.
-- Reuse the scripts under `scripts/c4d/` when their documented preconditions match the current scene. They are pipeline components, not a replacement for `c4d-remote-executor`; inject case paths and thresholds, inspect the script, and send it through the external Skill.
-- Prefer application scripting. Use computer control only for MoI or file dialogs that do not expose a reliable local automation API.
+Preserve active source geometry, selection, document identity/path and modified state. Stop on failed or ambiguous evidence; a timeout after a side effect is unknown completion and requires inspection before retry. Never weaken target checks or use order as identity. Retain the distinct C4D `RHINO_ID_`/original MoI route and Blender `RB_`/occurrence route until real regression evidence supports further unification. Shared settings do not establish that one FBX has been verified for both targets.
 
-## Non-negotiable invariants
+For requested C4D experience capture or maintenance, read only [queue rules](improvements/RULES.md) before recording. Existing personal pending entries are outside this package. Do not search pending entries or promote a candidate without explicit maintainer review.
 
-- Require exactly one Rhino process and identify the active Rhino document before any export.
-- Export metadata before any optional block explosion. Never decide from the viewport alone whether `ExplodeBlock` is needed.
-- Match the conversion copy to the metadata by object IDs, not counts alone; a complete `File3dm` export can contain objects outside the metadata snapshot. Use `File3dmObject.Attributes.ObjectId` when validating that copy.
-- Do not modify or overwrite the active Rhino source. Export the same in-memory state as the metadata, preserve its original identity and modified state, and prepare any Block expansion in a separate copy. Read [references/rhino-working-copy.md](references/rhino-working-copy.md) when preparing that copy.
-- Treat ASCII staging as temporary. After verification, consolidate the Rhino 5 and FBX artifacts into a source-side `codex_export_fbx` folder, verify collisions by hash, and remove the empty staging directory.
-- Do not use C4D `obj*` names or object order as identity.
-- Re-probe every model. Axis mapping, object counts, matching thresholds, and hierarchy mode are evidence, not constants inherited from a prior run.
-- Preserve every C4D polygon world matrix across reparenting with `GetMg()` and `SetMg()`.
-- Protect C4D mutations with the Remote Executor backup and an Undo transaction.
-- If a C4D script fails after its first side effect, treat completion as unknown. Do not retry until a read-only probe establishes the actual document state.
-- Stop before mutation on unresolved count differences, ambiguous assignments, excessive BBox error, missing Normal tags, or a changed active document.
-- Treat success as requiring both bridge and script success: inspect top-level `ok`, `execution_ok`, and `verification_ok`, plus `result.execution_ok` and `result.verification_ok`. Require assertions where practical and a separate read-only verification pass; a zero client exit code alone is insufficient.
-
-## Improvement queue
-
-When the user requests experience capture or Skill maintenance, record or absorb only reusable lessons supported by a concrete error, warning, command, or verified artifact. Ordinary model handoffs do not require an experience file; respect the user's instructions about persistent records.
-
-Before recording, read only [improvements/RULES.md](improvements/RULES.md). Do not list, search, or read existing pending entries. Do not modify another candidate or promote a candidate into established instructions, references, or scripts unless the maintainer explicitly requests review or absorption.
-
-Experience logging must not interrupt recovery or delay the user's primary task. If requested recording is unavailable or unwritable, report that limitation instead of redirecting the entry to an unrelated path.
-
-## Reconstruction modes
-
-- If live top-level Rhino instance references exist, expand Block occurrences and reconstruct the Block tree.
-- If the export is already exploded, reconstruct the Rhino Layer tree.
-- If Rhino geometry and C4D polygon counts are equal, solve a global BBox assignment. For ambiguous Layer imports with coincident BBoxes and materials, follow the verified source-ID transport route in [references/workflow.md](references/workflow.md#5-geometry-matching).
-- If C4D contains extra polygons, test whether MoI split Rhino Breps by face material. First assign every Rhino Brep one-to-one, then attach only the leftover meshes that are spatially contained by a matched Brep with an unambiguous source layer. Never force equal counts by index.
-
-`scripts/c4d/rebuild_layers_from_rhino.py` is a reusable equal-count Layer-mode implementation. Do not use it for Block mode or split-mesh leftovers; generate a task-specific guarded mutation through `c4d-remote-executor` for those cases.
-
-Leave the rebuilt C4D document open for review. Save a `.c4d` only when the user requests a destination or confirms the result. Do not report the pipeline complete while required artifacts remain scattered in a temporary staging folder.
+See [validation and merge evidence](VALIDATION.md) for offline test scope and remaining application checks.

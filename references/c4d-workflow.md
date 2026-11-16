@@ -2,16 +2,11 @@
 
 ## 1. Preflight and metadata
 
-1. Load and follow the external `c4d-remote-executor` Skill before operating C4D. Use the bundled Rhino exporter described in `references/rhino-metadata-export.md`; there is no separate Rhino metadata Skill dependency.
-2. Confirm one `Rhino.exe` process and capture the active document runtime serial number, path (which may be absent), and modified state. Inspect the open C4D documents. Keep this baseline in task state; do not create a separate process report unless requested.
-3. Run `scripts/rhino-metadata/invoke_export.ps1` from this Skill and retain the matching `automation.request_id` for every later artifact.
-4. Count top-level InstanceReference, Brep, Curve, Point, Layer, and Definition records.
-5. Decide whether the visible model still contains live Block instances. A single-looking viewport object is not sufficient evidence.
-6. If Block explosion is required, capture metadata first and perform it only on a controlled working copy. If top-level instance references are zero, skip `ExplodeBlock`.
+Load `c4d-remote-executor` and inspect open C4D documents. Follow [shared preflight and snapshot](rhino-moi-common.md#preflight-and-snapshot) and [metadata bridge](rhino-metadata-export.md). Retain the metadata request ID for later artifacts.
 
 ## 2. Rhino 5 copy
 
-Read [rhino-working-copy.md](rhino-working-copy.md) before preparing the conversion copy. Select the export from the actual source state: a disk read is suitable only when it represents the metadata snapshot; an unsaved or modified document needs a copy of the loaded state. Refuse overwrite and verify the original runtime serial number, path, and modified state after writing. An initially modified document must remain in that state.
+Read [c4d-rhino-working-copy.md](c4d-rhino-working-copy.md) before preparing the conversion copy. Select the export from the actual source state: a disk read is suitable only when it represents the metadata snapshot; an unsaved or modified document needs a copy of the loaded state. Refuse overwrite and verify the original runtime serial number, path, and modified state after writing. An initially modified document must remain in that state.
 
 For Block mode, expand occurrences in a separate in-memory `File3dm`, normalize copied object attributes for standalone geometry, and validate the written copy before opening it in MoI. Keep the original Block metadata for reconstruction.
 
@@ -25,19 +20,7 @@ Open the Rhino 5 copy in MoI. When no stable MoI scripting interface is availabl
 
 Wait for loading to complete and inspect the expected geometry before starting export. If the view is empty, inspect the copy's object count, geometry validity, visibility, and object modes before generating another file. Valid geometry can still be excluded because it retains definition-only attributes.
 
-Required Meshing options:
-
-- polygon slider: same high-detail position as the approved reference;
-- `Output`: `N-gons`;
-- `Display`: `Shaded + edges`;
-- `Weld vertices along edges`: checked;
-- `Angle`: `3`;
-- `Divide larger than`: `20`, mode `All`;
-- `Avoid smaller than`: `.5`;
-- `Aspect ratio limit`: `0`.
-
-Verify the FBX exists, is nonzero, and has an ASCII-compatible filename.
-When MoI exposes preview polygon/point counts, record them with the chosen settings as diagnostic evidence; they are not a substitute for the C4D import probe.
+Apply the [common MoI preset](rhino-moi-common.md#common-moi-preset). **C4D extra on-site check:** polygon slider must match the approved high-detail reference. Visually verify every settled value before confirming. Preview counts are diagnostic, not a substitute for the C4D probe.
 
 ## 4. C4D import and Normal tags
 
@@ -71,7 +54,7 @@ For equal counts:
 5. Record how many assignments the material tie-break resolved and independently verify that each resolved Polygon is under the expected Layer Null with the expected material.
 6. Reject excessive maximum error or unresolved equal-cost candidates.
 
-If coincident BBoxes and the material tie-break leave a flat equal-count Layer import ambiguous, use a fresh [source-ID transport copy](rhino-working-copy.md#carry-source-ids-through-an-equal-count-layer-export). The complete imported token set must match the geometry IDs in the same Rhino metadata snapshot, with each token appearing exactly once. The tokens establish correspondence. Fit one axis permutation, sign combination and translation to the paired world BBoxes and reject any object outside the accepted tolerance. The supplied matcher expects the Rhino and C4D coordinates to be in the same units. If the import introduces a scale change, correct and verify the units before matching.
+If coincident BBoxes and the material tie-break leave a flat equal-count Layer import ambiguous, use a fresh [source-ID transport copy](c4d-rhino-working-copy.md#carry-source-ids-through-an-equal-count-layer-export). The complete imported token set must match the geometry IDs in the same Rhino metadata snapshot, with each token appearing exactly once. The tokens establish correspondence. Fit one axis permutation, sign combination and translation to the paired world BBoxes and reject any object outside the accepted tolerance. The supplied matcher expects the Rhino and C4D coordinates to be in the same units. If the import introduces a scale change, correct and verify the units before matching.
 
 For `C4D Polygon count > Rhino Brep count`:
 
@@ -129,15 +112,7 @@ A failed view-framing command is a view-operation failure, not evidence that geo
 
 ## 8. Artifact consolidation
 
-ASCII staging is a transport workaround, not the final delivery location.
-
-1. Resolve and verify the exact staging and source-side destination paths.
-2. Use `<original model folder>\codex_export_fbx` as the default final artifact directory unless the user specifies another location. If the source has no saved path, use the current task's writable output directory and report that destination; do not guess a source directory from an application title or an unrelated recent file.
-3. Move the FBX and any other unique process artifacts into that directory.
-4. If the destination already contains a same-named Rhino 5 or FBX file, compare SHA-256 before cleanup. Delete the staging duplicate only when hashes match; never overwrite a different file.
-5. Re-list the destination and record file sizes and hashes.
-6. Remove the staging directory only after proving it is empty. Avoid recursive deletion for this cleanup.
-7. Report the final paths. If the open C4D document was loaded from the former staging path, clarify that future reimports must use the consolidated FBX path.
+Follow [shared artifact consolidation](rhino-moi-common.md#artifact-consolidation). If the open C4D document was loaded from the former staging path, future reimports must use the consolidated FBX. Leave the document open for review; save a final `.c4d` only to a user-requested or confirmed destination.
 
 ## Stop and request help
 
